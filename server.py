@@ -529,11 +529,11 @@ def get_track():
 
 if __name__ == "__main__":
     ensure_initialized()
+    port = int(os.environ.get("PORT", "5050"))
     print()
     print("  Wave Analysis API Server")
     print("  ========================")
-    print("  Dashboard -> http://localhost:5050")
-    print("  API ping  -> http://localhost:5050/ping")
+    print(f"  Dashboard -> http://localhost:{port}")
+    print(f"  API ping  -> http://localhost:{port}/ping")
     print()
-    port = int(os.environ.get("PORT", "5050"))
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)

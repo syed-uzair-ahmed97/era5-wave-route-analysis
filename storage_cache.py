@@ -29,7 +29,7 @@ def ensure_era5_files(folder, year_start, year_end):
 
     endpoint_url = os.environ.get("OBJECT_STORAGE_ENDPOINT") or None
     bucket = os.environ["OBJECT_STORAGE_BUCKET"]
-    prefix = os.environ.get("OBJECT_STORAGE_PREFIX", "era5").strip("/")
+    prefix = os.environ.get("OBJECT_STORAGE_PREFIX", "").strip("/")
 
     client = boto3.client(
         "s3",

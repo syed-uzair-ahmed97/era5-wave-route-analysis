@@ -704,7 +704,7 @@
 /* ═══════════════════════════════════════════════════════════════
    GLOBALS
 ═══════════════════════════════════════════════════════════════ */
-const API   = 'http://localhost:5050';
+const API   = window.location.origin;
 let map     = null;
 let markers = [];
 let results = null;
@@ -996,7 +996,7 @@ async function checkServer() {
     const r = await fetch(`${API}/ping`, { signal: AbortSignal.timeout(2000) });
     if (r.ok) {
       dot.className   = 'online';
-      label.textContent = 'Server online :5050';
+      label.textContent = 'Server online';
       return true;
     }
   } catch {}

@@ -70,7 +70,7 @@ S3-compatible environment variables:
 ```bash
 OBJECT_STORAGE_ENDPOINT=...
 OBJECT_STORAGE_BUCKET=...
-OBJECT_STORAGE_PREFIX=era5
+OBJECT_STORAGE_PREFIX=
 OBJECT_STORAGE_ACCESS_KEY=...
 OBJECT_STORAGE_SECRET_KEY=...
 OBJECT_STORAGE_REGION=auto
@@ -100,3 +100,24 @@ The included `Procfile` is ready for platforms that support it:
 ```text
 web: gunicorn server:app --bind 0.0.0.0:$PORT --workers 1 --timeout 300
 ```
+
+## Hugging Face Spaces
+
+Use a Docker Space. The included `Dockerfile` runs the Flask app on port `7860`, which is the standard Hugging Face Spaces web port.
+
+Set these Space secrets:
+
+```text
+SECRET_KEY=replace-with-a-long-random-string
+ADMIN_EMAIL=your-email@example.com
+ADMIN_PASSWORD=your-password
+SESSION_COOKIE_SECURE=true
+OBJECT_STORAGE_ENDPOINT=https://your-account-id.r2.cloudflarestorage.com
+OBJECT_STORAGE_BUCKET=era5-wave-data
+OBJECT_STORAGE_PREFIX=
+OBJECT_STORAGE_ACCESS_KEY=your-r2-access-key-id
+OBJECT_STORAGE_SECRET_KEY=your-r2-secret-access-key
+OBJECT_STORAGE_REGION=auto
+```
+
+Leave `OBJECT_STORAGE_PREFIX` blank because the NetCDF files were uploaded directly into the R2 bucket root.
