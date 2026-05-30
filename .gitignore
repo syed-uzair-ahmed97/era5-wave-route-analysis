@@ -1,0 +1,9 @@
+.env
+app.db
+__pycache__/
+*.pyc
+results/
+tmp_compare_zone/
+*.nc
+*.xlsx
+~$*.xlsx

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login - ERA5 Wave Route Analysis</title>
+  <style>
+    :root {
+      --bg0: #0a0d14;
+      --bg1: #111520;
+      --bg2: #171c2d;
+      --border: #2a3260;
+      --accent: #4f8ef7;
+      --accent2: #7c5af7;
+      --text0: #f0f4ff;
+      --text1: #a0aec8;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: Inter, Segoe UI, Arial, sans-serif;
+      background: var(--bg0);
+      color: var(--text0);
+    }
+    .login {
+      width: min(420px, calc(100vw - 32px));
+      background: var(--bg1);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 28px;
+      box-shadow: 0 16px 50px rgba(0,0,0,.45);
+    }
+    .logo {
+      width: 42px;
+      height: 42px;
+      display: grid;
+      place-items: center;
+      border-radius: 8px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      margin-bottom: 16px;
+    }
+    h1 { font-size: 22px; margin: 0 0 6px; }
+    p { color: var(--text1); margin: 0 0 22px; font-size: 14px; }
+    label { display: block; font-size: 13px; color: var(--text1); margin-bottom: 6px; }
+    input {
+      width: 100%;
+      background: var(--bg2);
+      color: var(--text0);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 11px 12px;
+      margin-bottom: 14px;
+      outline: none;
+    }
+    input:focus { border-color: var(--accent); }
+    button {
+      width: 100%;
+      border: 0;
+      border-radius: 7px;
+      padding: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .hint {
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--text1);
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+  <form class="login" method="post" action="/login">
+    <div class="logo">~</div>
+    <h1>ERA5 Wave Route Analysis</h1>
+    <p>Sign in to build sea routes and run Hs/Tp analysis.</p>
+
+    <label for="email">Email</label>
+    <input id="email" name="email" type="email" value="admin@example.com" autocomplete="username" required />
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required />
+
+    <button type="submit">Sign In</button>
+    <div class="hint">
+      Local default: admin@example.com / admin123.<br />
+      Set ADMIN_EMAIL, ADMIN_PASSWORD, and SECRET_KEY before deploying online.
+    </div>
+  </form>
+</body>
+</html>

@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Wave Route Analysis — ERA5 Joint Probability</title>
+  <meta name="description"
+        content="Interactive ERA5 wave route analysis tool — compute and visualise route-weighted Hs×Tp joint probability distributions." />
+
+  <!-- Leaflet for map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- Google Font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <style>
+    /* ── RESET & TOKENS ─────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg0      : #0a0d14;
+      --bg1      : #111520;
+      --bg2      : #171c2d;
+      --bg3      : #1e2540;
+      --border   : #2a3260;
+      --accent   : #4f8ef7;
+      --accent2  : #7c5af7;
+      --success  : #34d399;
+      --warn     : #fbbf24;
+      --danger   : #f87171;
+      --text0    : #f0f4ff;
+      --text1    : #a0aec8;
+      --text2    : #5a6480;
+      --radius   : 12px;
+      --radius-sm: 8px;
+      --shadow   : 0 4px 32px rgba(0,0,0,.5);
+      --glow     : 0 0 24px rgba(79,142,247,.18);
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'Inter', sans-serif;
+      background: var(--bg0);
+      color: var(--text0);
+      overflow: hidden;
+    }
+
+    /* ── LAYOUT ─────────────────────────────────────────────────────── */
+    #app {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      grid-template-rows: 56px 1fr;
+      height: 100vh;
+    }
+
+    /* Header */
+    #header {
+      grid-column: 1 / -1;
+      background: var(--bg1);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 16px;
+      box-shadow: 0 2px 16px rgba(0,0,0,.4);
+    }
+    #header .logo {
+      width: 36px; height: 36px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    #header h1 { font-size: 17px; font-weight: 600; color: var(--text0); letter-spacing: -.3px; }
+    #header .subtitle { font-size: 12px; color: var(--text1); margin-left: 2px; }
+    #header .spacer { flex: 1; }
+    #server-badge {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 14px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      font-size: 12px; color: var(--text1);
+      cursor: pointer;
+      transition: border-color .2s, box-shadow .2s;
+    }
+    #server-badge:hover { border-color: var(--accent); box-shadow: var(--glow); }
+    #server-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text2); flex-shrink: 0; transition: background .3s; }
+    #server-dot.online  { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    #server-dot.offline { background: var(--danger);  box-shadow: 0 0 6px var(--danger); }
+    .nav-link {
+      color: var(--text1);
+      border: 1px solid var(--border);
+      background: var(--bg2);
+      border-radius: 18px;
+      padding: 6px 12px;
+      font-size: 12px;
+      text-decoration: none;
+    }
+    .nav-link:hover { color: var(--text0); border-color: var(--accent); }
+
+    /* Sidebar */
+    #sidebar {
+      background: var(--bg1);
+      border-right: 1px solid var(--border);
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+    #sidebar::-webkit-scrollbar { width: 4px; }
+    #sidebar::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .panel {
+      padding: 18px 20px;
+      border-bottom: 1px solid var(--border);
+    }
+    .panel-title {
+      font-size: 11px; font-weight: 600; letter-spacing: .08em;
+      text-transform: uppercase; color: var(--text2);
+      margin-bottom: 14px; display: flex; align-items: center; gap: 8px;
+    }
+    .panel-title svg { opacity: .7; }
+
+    label { display: block; font-size: 12px; color: var(--text1); margin-bottom: 5px; }
+    input[type="text"], input[type="number"] {
+      width: 100%;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text0);
+      padding: 8px 12px;
+      font-size: 13px;
+      font-family: inherit;
+      outline: none;
+      transition: border-color .2s, box-shadow .2s;
+      margin-bottom: 12px;
+    }
+    input[type="text"]:focus, input[type="number"]:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79,142,247,.15);
+    }
+
+    .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .route-status {
+      font-size: 11px;
+      color: var(--text2);
+      line-height: 1.5;
+      margin-top: 8px;
+      min-height: 18px;
+    }
+    .waypoint-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      margin: 8px 0 12px;
+    }
+    .waypoint-item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 8px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 11px;
+      color: var(--text1);
+    }
+    .waypoint-item button {
+      width: 24px;
+      height: 24px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--bg3);
+      color: var(--text1);
+      cursor: pointer;
+    }
+    .coord-note {
+      font-size: 11px;
+      color: var(--text2);
+      margin: -6px 0 10px;
+    }
+
+    /* Range slider */
+    .slider-wrap { margin-bottom: 14px; }
+    .slider-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--text2); margin-top: 4px; }
+    input[type="range"] {
+      -webkit-appearance: none;
+      width: 100%; height: 4px;
+      background: var(--bg3);
+      border-radius: 4px;
+      outline: none;
+      margin-top: 8px;
+    }
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 16px; height: 16px;
+      border-radius: 50%;
+      background: var(--accent);
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(79,142,247,.5);
+      transition: box-shadow .2s;
+    }
+    input[type="range"]::-webkit-slider-thumb:hover {
+      box-shadow: 0 0 16px rgba(79,142,247,.8);
+    }
+
+    /* Buttons */
+    .btn {
+      width: 100%;
+      padding: 11px 16px;
+      border-radius: var(--radius-sm);
+      border: none;
+      font-family: inherit;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity .2s, box-shadow .2s, transform .1s;
+    }
+    .btn:active { transform: scale(.98); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(79,142,247,.35);
+    }
+    .btn-primary:hover { box-shadow: 0 6px 24px rgba(79,142,247,.55); }
+    .btn-primary:disabled { opacity: .5; cursor: not-allowed; }
+    .btn-ghost {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      color: var(--text1);
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--text0); }
+    .btn-sm { padding: 7px 12px; font-size: 12px; width: auto; }
+
+    /* Progress log */
+    #log-box {
+      background: var(--bg0);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px;
+      color: var(--text1);
+      padding: 10px;
+      height: 150px;
+      overflow-y: auto;
+      line-height: 1.7;
+      margin-top: 10px;
+    }
+    #log-box .ok   { color: var(--success); }
+    #log-box .err  { color: var(--danger); }
+    #log-box .info { color: var(--accent); }
+    #progress-card {
+      margin-top: 10px;
+      padding: 12px;
+      background: var(--bg0);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+    }
+    .progress-head {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--text1);
+      margin-bottom: 8px;
+    }
+    #progress-percent {
+      color: var(--text0);
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+    }
+    .progress-track {
+      height: 8px;
+      background: var(--bg3);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    #progress-bar {
+      width: 0%;
+      height: 100%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      transition: width .25s ease;
+    }
+    #progress-details {
+      margin-top: 10px;
+      color: var(--text2);
+      font-size: 11px;
+      cursor: pointer;
+      user-select: none;
+    }
+    #log-box.collapsed { display: none; }
+
+    /* Download buttons */
+    .dl-row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+
+    /* Main area */
+    #main {
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      overflow: hidden;
+    }
+
+    /* Map */
+    #map-wrap {
+      position: relative;
+      overflow: hidden;
+      border-bottom: 1px solid var(--border);
+    }
+    #map { width: 100%; height: 100%; }
+    #map-overlay {
+      position: absolute;
+      top: 12px; left: 12px;
+      background: rgba(10,13,20,.85);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 14px;
+      font-size: 12px;
+      color: var(--text1);
+      pointer-events: none;
+      z-index: 400;
+    }
+    #map-overlay strong { color: var(--text0); }
+
+    /* Results panel */
+    #results-wrap {
+      overflow-y: auto;
+      padding: 20px 24px;
+      background: var(--bg0);
+    }
+    #results-wrap::-webkit-scrollbar { width: 5px; }
+    #results-wrap::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+    .section-title {
+      font-size: 13px; font-weight: 600; color: var(--text0);
+      margin-bottom: 14px;
+      display: flex; align-items: center; gap: 10px;
+    }
+    .section-title::after {
+      content: '';
+      flex: 1; height: 1px;
+      background: var(--border);
+    }
+
+    /* Stats row */
+    #stats-row { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .stat-card {
+      background: var(--bg1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      min-width: 140px;
+    }
+    .stat-card .label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: .06em; }
+    .stat-card .value { font-size: 20px; font-weight: 700; color: var(--text0); margin-top: 2px; }
+    .stat-card .sub   { font-size: 11px; color: var(--text1); margin-top: 1px; }
+
+    /* Heatmap table */
+    #heatmap-wrap {
+      overflow-x: auto;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      background: var(--bg1);
+      margin-bottom: 20px;
+    }
+    #heatmap-table {
+      border-collapse: collapse;
+      font-size: 11px;
+      font-family: 'JetBrains Mono', monospace;
+      min-width: 100%;
+    }
+    #heatmap-table th, #heatmap-table td {
+      padding: 6px 9px;
+      text-align: center;
+      border: 1px solid rgba(42,50,96,.5);
+      white-space: nowrap;
+    }
+    #heatmap-table thead th {
+      background: var(--bg3);
+      color: var(--text1);
+      font-size: 10px;
+      font-weight: 600;
+    }
+    #heatmap-table tbody td:first-child {
+      background: var(--bg3);
+      color: var(--text1);
+      font-weight: 600;
+    }
+    #heatmap-table .total-row td,
+    #heatmap-table .total-col {
+      background: var(--bg3) !important;
+      color: var(--text0) !important;
+      font-weight: 700;
+    }
+
+    #empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--text2);
+    }
+    #empty-state .icon { font-size: 48px; margin-bottom: 16px; }
+    #empty-state p { font-size: 14px; line-height: 1.6; }
+
+    /* Point detail popup */
+    #point-detail {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.65);
+      backdrop-filter: blur(8px);
+      z-index: 9999;
+      align-items: center;
+      justify-content: center;
+    }
+    #point-detail.open { display: flex; }
+    #detail-box {
+      background: var(--bg1);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 24px;
+      max-width: 720px;
+      width: 95vw;
+      max-height: 80vh;
+      overflow-y: auto;
+      box-shadow: var(--shadow);
+    }
+    #detail-box h3 { font-size: 15px; margin-bottom: 16px; color: var(--text0); }
+    #detail-close {
+      float: right;
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text1);
+      padding: 4px 10px;
+      cursor: pointer;
+      font-family: inherit;
+      font-size: 13px;
+    }
+    #detail-close:hover { color: var(--text0); border-color: var(--accent); }
+
+    /* Spinner */
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid rgba(255,255,255,.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+
+    /* Pulse animation for run button */
+    @keyframes pulse-glow {
+      0%, 100% { box-shadow: 0 4px 16px rgba(79,142,247,.35); }
+      50%       { box-shadow: 0 4px 32px rgba(79,142,247,.8); }
+    }
+    .btn-running { animation: pulse-glow 1.2s ease-in-out infinite; }
+
+    /* Toast */
+    #toast {
+      position: fixed;
+      bottom: 24px; right: 24px;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 18px;
+      font-size: 13px;
+      color: var(--text0);
+      box-shadow: var(--shadow);
+      z-index: 10000;
+      transform: translateY(80px);
+      opacity: 0;
+      transition: transform .3s, opacity .3s;
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- ─────────── HEADER ─────────── -->
+  <header id="header">
+    <div class="logo">🌊</div>
+    <div>
+      <h1>ERA5 Wave Route Analysis</h1>
+      <div class="subtitle">Route-Weighted Joint Probability of Hs &amp; Tp</div>
+    </div>
+    <div class="spacer"></div>
+    <div id="server-badge" onclick="checkServer()" title="Click to refresh connection">
+      <div id="server-dot"></div>
+      <span id="server-label">Checking server…</span>
+    </div>
+    <a class="nav-link" href="/logout">Logout</a>
+  </header>
+
+  <!-- ─────────── SIDEBAR ─────────── -->
+  <aside id="sidebar">
+
+    <!-- Route builder -->
+    <div class="panel">
+      <div class="panel-title">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>
+        Route Builder
+      </div>
+
+      <label for="origin-port">Origin Port</label>
+      <input id="origin-port" type="text" list="port-options" value="Rizhao, China" onchange="applyPort('origin')" placeholder="Search port or enter coordinates" />
+      <div class="row2">
+        <div>
+          <label>Lon</label>
+          <input id="origin-lon" type="number" value="120.83" step="0.0001" min="-180" max="180" />
+        </div>
+        <div>
+          <label>Lat</label>
+          <input id="origin-lat" type="number" value="37.83" step="0.0001" min="-90" max="90" />
+        </div>
+      </div>
+
+      <label for="destination-port">Destination Port</label>
+      <input id="destination-port" type="text" list="port-options" value="Esbjerg, Denmark" onchange="applyPort('destination')" placeholder="Search port or enter coordinates" />
+      <div class="row2">
+        <div>
+          <label>Lon</label>
+          <input id="destination-lon" type="number" value="8.43" step="0.0001" min="-180" max="180" />
+        </div>
+        <div>
+          <label>Lat</label>
+          <input id="destination-lat" type="number" value="55.46" step="0.0001" min="-90" max="90" />
+        </div>
+      </div>
+
+      <div class="coord-note">Map-click waypoints are inserted between origin and destination.</div>
+      <div id="waypoint-list" class="waypoint-list"></div>
+      <div class="dl-row">
+        <button class="btn btn-ghost btn-sm" onclick="toggleWaypointMode()" id="waypoint-mode-btn">Add by Map</button>
+        <button class="btn btn-ghost btn-sm" onclick="addCapeTownWaypoint()">Via Cape Town</button>
+        <button class="btn btn-ghost btn-sm" onclick="clearWaypoints()">Clear</button>
+      </div>
+      <button class="btn btn-primary" style="margin-top:10px" onclick="generateSeaRoute()" id="route-btn">
+        Generate Sea Route
+      </button>
+      <div id="route-status" class="route-status">Generated route will overwrite data/track.txt.</div>
+      <datalist id="port-options"></datalist>
+    </div>
+
+    <!-- Config -->
+    <div class="panel">
+      <div class="panel-title">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
+        Configuration
+      </div>
+
+      <label for="cfg-folder">Data Folder</label>
+      <input id="cfg-folder" type="text" value="D:\ERA5\wavedata\Zone_IDE\data" placeholder="Path to folder with .nc files" />
+
+      <label for="cfg-track">Track File</label>
+      <input id="cfg-track" type="text" value="" placeholder="(auto: track.txt in folder)" />
+
+      <label>Year Range: <span id="year-label" style="color:var(--text0);font-weight:600">2016 – 2025</span></label>
+      <div class="row2">
+        <div>
+          <label style="margin-bottom:2px;font-size:11px">Start</label>
+          <input id="year-start" type="number" value="2016" min="2016" max="2025" />
+        </div>
+        <div>
+          <label style="margin-bottom:2px;font-size:11px">End</label>
+          <input id="year-end" type="number" value="2025" min="2016" max="2025" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Bin settings -->
+    <div class="panel">
+      <div class="panel-title">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+        Bin Settings
+      </div>
+
+      <div class="row2">
+        <div>
+          <label>Hs max (m)</label>
+          <input id="cfg-hs-max" type="number" value="9" step="1" min="2" max="20" />
+        </div>
+        <div>
+          <label>Hs step (m)</label>
+          <input id="cfg-hs-step" type="number" value="1" step="0.5" min="0.5" max="5" />
+        </div>
+      </div>
+      <div class="row2">
+        <div>
+          <label>Tp max (s)</label>
+          <input id="cfg-tp-max" type="number" value="21" step="1" min="5" max="40" />
+        </div>
+        <div>
+          <label>Tp step (s)</label>
+          <input id="cfg-tp-step" type="number" value="1" step="0.5" min="0.5" max="5" />
+        </div>
+      </div>
+    </div>
+
+    <!-- Run -->
+    <div class="panel">
+      <div class="panel-title">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Run Analysis
+      </div>
+
+      <button id="run-btn" class="btn btn-primary" onclick="runAnalysis()">
+        ▶ &nbsp;Run Analysis
+      </button>
+
+      <div id="progress-card">
+        <div class="progress-head">
+          <span id="progress-message">Ready</span>
+          <span id="progress-percent">0%</span>
+        </div>
+        <div class="progress-track">
+          <div id="progress-bar"></div>
+        </div>
+        <div id="progress-details" onclick="toggleRunDetails()">Show details</div>
+      </div>
+      <div id="log-box" class="collapsed"></div>
+    </div>
+
+    <!-- Downloads -->
+    <div class="panel">
+      <div class="panel-title">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+        Downloads
+      </div>
+      <div class="dl-row">
+        <button id="dl-png"   class="btn btn-ghost btn-sm" onclick="dl('png')"   disabled>🖼 PNG</button>
+        <button id="dl-svg"   class="btn btn-ghost btn-sm" onclick="dl('svg')"   disabled>🖋 SVG</button>
+      </div>
+    </div>
+
+    <!-- Load existing results -->
+    <div class="panel">
+      <div class="panel-title">
+        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"/></svg>
+        Load Results
+      </div>
+      <button class="btn btn-ghost" onclick="loadResults()" id="load-btn">↓ Load Existing Results</button>
+      <div style="font-size:11px;color:var(--text2);margin-top:8px">
+        Load results.json if analysis was already run.
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ─────────── MAIN ─────────── -->
+  <main id="main">
+
+    <!-- Map -->
+    <div id="map-wrap">
+      <div id="map"></div>
+      <div id="map-overlay">
+        <strong>Route Map</strong> — click a point for its D-matrix
+      </div>
+    </div>
+
+    <!-- Results -->
+    <div id="results-wrap">
+      <div id="empty-state">
+        <div class="icon">📈</div>
+        <p>Configure the parameters and click <strong>Run Analysis</strong>,<br />or click <strong>Load Existing Results</strong> if you've already run it.</p>
+      </div>
+
+      <div id="results-content" style="display:none">
+        <div id="stats-row"></div>
+
+        <div class="section-title">Route-Weighted Joint Probability — Hs × Tp (%)</div>
+
+        <div id="heatmap-wrap">
+          <table id="heatmap-table"></table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Point detail modal -->
+<div id="point-detail">
+  <div id="detail-box">
+    <button id="detail-close" onclick="closeDetail()">✕ Close</button>
+    <h3 id="detail-title">Point Detail</h3>
+    <div id="detail-content"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+/* ═══════════════════════════════════════════════════════════════
+   GLOBALS
+═══════════════════════════════════════════════════════════════ */
+const API   = 'http://localhost:5050';
+let map     = null;
+let markers = [];
+let results = null;
+let pollTimer = null;
+let trackLayer = null;
+let routeBuilderLayer = null;
+let waypointMode = false;
+let waypoints = [];
+
+let PORTS = [
+  { name: 'Rizhao, China', lon: 120.83, lat: 37.83 },
+  { name: 'Cape Town, South Africa', lon: 18.4241, lat: -33.9249 },
+  { name: 'Esbjerg, Denmark', lon: 8.43, lat: 55.46 },
+  { name: 'Shanghai, China', lon: 121.49, lat: 31.23 },
+  { name: 'Singapore', lon: 103.85, lat: 1.29 },
+  { name: 'Colombo, Sri Lanka', lon: 79.84, lat: 6.94 },
+  { name: 'Rotterdam, Netherlands', lon: 4.48, lat: 51.92 },
+  { name: 'Antwerp, Belgium', lon: 4.40, lat: 51.22 },
+  { name: 'Hamburg, Germany', lon: 9.99, lat: 53.55 },
+  { name: 'Busan, South Korea', lon: 129.05, lat: 35.10 },
+  { name: 'Yokohama, Japan', lon: 139.64, lat: 35.45 },
+  { name: 'Port Said, Egypt', lon: 32.30, lat: 31.26 },
+  { name: 'Jebel Ali, UAE', lon: 55.02, lat: 24.99 },
+  { name: 'Los Angeles, USA', lon: -118.25, lat: 33.74 },
+  { name: 'New York, USA', lon: -74.01, lat: 40.70 }
+];
+
+/* ═══════════════════════════════════════════════════════════════
+   MAP INIT
+═══════════════════════════════════════════════════════════════ */
+function initMap() {
+  map = L.map('map', { zoomControl: true }).setView([20, 60], 3);
+
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap © CartoDB',
+    subdomains  : 'abcd',
+    maxZoom     : 19,
+  }).addTo(map);
+
+  routeBuilderLayer = L.layerGroup().addTo(map);
+  map.on('click', onMapClick);
+  initPortOptions();
+  initRouteInputs();
+  renderWaypoints();
+  updateRouteBuilderPreview();
+
+  // Load track from server
+  fetchTrack();
+}
+
+async function fetchTrack() {
+  try {
+    const r = await fetch(`${API}/track`);
+    if (!r.ok) return;
+    const pts = await r.json();
+    drawTrack(pts);
+  } catch { /* server not running yet */ }
+}
+
+function drawTrack(pts) {
+  if (trackLayer) {
+    map.removeLayer(trackLayer);
+    trackLayer = null;
+  }
+  // Polyline
+  const latlngs = pts.map(p => [p.lat, p.lon]);
+  trackLayer = L.polyline(latlngs, {
+    color: '#4f8ef7',
+    weight: 2,
+    opacity: 0.7,
+  }).addTo(map);
+
+  if (latlngs.length > 0) {
+    const bounds = L.latLngBounds(latlngs);
+    map.fitBounds(bounds, { padding: [20, 20] });
+  }
+}
+
+async function initPortOptions() {
+  try {
+    const r = await fetch(`${API}/api/ports/search`);
+    if (r.ok) {
+      const ports = await r.json();
+      PORTS = ports.map(p => ({
+        name: `${p.name}, ${p.country}${p.unlocode ? ` (${p.unlocode})` : ''}`,
+        lon: p.lon,
+        lat: p.lat,
+      }));
+    }
+  } catch {}
+  const list = document.getElementById('port-options');
+  list.innerHTML = PORTS.map(p => `<option value="${p.name}"></option>`).join('');
+}
+
+function initRouteInputs() {
+  ['origin-lon', 'origin-lat', 'destination-lon', 'destination-lat'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updateRouteBuilderPreview);
+  });
+}
+
+function findPort(name) {
+  return PORTS.find(p => p.name.toLowerCase() === String(name).trim().toLowerCase());
+}
+
+function applyPort(kind) {
+  const selected = findPort(document.getElementById(`${kind}-port`).value);
+  if (!selected) return;
+  document.getElementById(`${kind}-lon`).value = selected.lon;
+  document.getElementById(`${kind}-lat`).value = selected.lat;
+  updateRouteBuilderPreview();
+}
+
+function getRoutePoint(kind) {
+  return {
+    lon: parseFloat(document.getElementById(`${kind}-lon`).value),
+    lat: parseFloat(document.getElementById(`${kind}-lat`).value),
+  };
+}
+
+function onMapClick(e) {
+  if (!waypointMode) return;
+  waypoints.push({ lon: e.latlng.lng, lat: e.latlng.lat });
+  renderWaypoints();
+  updateRouteBuilderPreview();
+}
+
+function toggleWaypointMode() {
+  waypointMode = !waypointMode;
+  const btn = document.getElementById('waypoint-mode-btn');
+  btn.textContent = waypointMode ? 'Click Map...' : 'Add by Map';
+  btn.style.borderColor = waypointMode ? 'var(--success)' : 'var(--border)';
+  document.getElementById('route-status').textContent = waypointMode
+    ? 'Click the map to add waypoints in route order.'
+    : 'Generated route will overwrite data/track.txt.';
+}
+
+function addCapeTownWaypoint() {
+  waypoints.push({ lon: 18.4241, lat: -33.9249 });
+  renderWaypoints();
+  updateRouteBuilderPreview();
+}
+
+function removeWaypoint(index) {
+  waypoints.splice(index, 1);
+  renderWaypoints();
+  updateRouteBuilderPreview();
+}
+
+function clearWaypoints() {
+  waypoints = [];
+  renderWaypoints();
+  updateRouteBuilderPreview();
+}
+
+function renderWaypoints() {
+  const list = document.getElementById('waypoint-list');
+  if (!waypoints.length) {
+    list.innerHTML = '<div class="route-status">No waypoints added.</div>';
+    return;
+  }
+  list.innerHTML = waypoints.map((p, i) => `
+    <div class="waypoint-item">
+      <span>${i + 1}. ${p.lon.toFixed(4)}, ${p.lat.toFixed(4)}</span>
+      <button onclick="removeWaypoint(${i})" title="Remove waypoint">x</button>
+    </div>
+  `).join('');
+}
+
+function updateRouteBuilderPreview(routePts = null) {
+  if (!routeBuilderLayer || !map) return;
+  routeBuilderLayer.clearLayers();
+
+  const origin = getRoutePoint('origin');
+  const destination = getRoutePoint('destination');
+  const controlPts = [origin, ...waypoints, destination].filter(p => Number.isFinite(p.lon) && Number.isFinite(p.lat));
+
+  controlPts.forEach((p, i) => {
+    const label = i === 0 ? 'Origin' : i === controlPts.length - 1 ? 'Destination' : `Waypoint ${i}`;
+    L.circleMarker([p.lat, p.lon], {
+      radius: 6,
+      color: '#fff',
+      weight: 2,
+      fillColor: i === 0 ? '#34d399' : i === controlPts.length - 1 ? '#f87171' : '#fbbf24',
+      fillOpacity: 0.9,
+    }).bindTooltip(label).addTo(routeBuilderLayer);
+  });
+
+  const previewPts = routePts || controlPts;
+  if (previewPts.length > 1) {
+    L.polyline(previewPts.map(p => [p.lat, p.lon]), {
+      color: routePts ? '#34d399' : '#fbbf24',
+      weight: routePts ? 3 : 1,
+      opacity: routePts ? 0.9 : 0.6,
+      dashArray: routePts ? null : '6,6',
+    }).addTo(routeBuilderLayer);
+  }
+}
+
+async function generateSeaRoute() {
+  const online = await checkServer();
+  if (!online) { toast('Server offline.', 'err'); return; }
+
+  const origin = getRoutePoint('origin');
+  const destination = getRoutePoint('destination');
+  if (![origin, destination].every(p => Number.isFinite(p.lon) && Number.isFinite(p.lat))) {
+    toast('Enter valid origin and destination coordinates.', 'err');
+    return;
+  }
+
+  const btn = document.getElementById('route-btn');
+  const status = document.getElementById('route-status');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Generating...';
+  status.textContent = 'Generating sea route and writing data/track.txt...';
+
+  try {
+    const r = await fetch(`${API}/route/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        origin: [origin.lon, origin.lat],
+        destination: [destination.lon, destination.lat],
+        waypoints: waypoints.map(p => [p.lon, p.lat]),
+      }),
+    });
+    const j = await r.json();
+    if (!r.ok) {
+      toast(j.error || 'Route generation failed.', 'err');
+      status.textContent = j.error || 'Route generation failed.';
+      return;
+    }
+
+    const pts = j.coordinates;
+    drawTrack(pts);
+    updateRouteBuilderPreview(pts);
+    document.getElementById('cfg-track').value = j.saved_track;
+    status.textContent = `Saved ${j.points} points to data/track.txt. Route length: ${Number(j.length).toFixed(1)} ${j.units}.`;
+    toast('Sea route saved as track.txt.');
+  } catch (e) {
+    toast(`${e}`, 'err');
+    status.textContent = `${e}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate Sea Route';
+  }
+}
+
+function drawGridPoints(perPoint) {
+  // Clear old markers
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+
+  perPoint.forEach((pt, idx) => {
+    const size = 8 + pt.weight * 400;
+    const icon = L.divIcon({
+      className: '',
+      html: `<div style="
+        width:${size}px;height:${size}px;
+        border-radius:50%;
+        background:rgba(124,90,247,0.85);
+        border:2px solid #fff;
+        box-shadow:0 0 8px rgba(124,90,247,.8);
+        cursor:pointer;
+        transform:translate(-50%,-50%);
+      "></div>`,
+      iconSize: [size, size],
+      iconAnchor: [size/2, size/2],
+    });
+
+    const m = L.marker([pt.lat, pt.lon], { icon })
+      .addTo(map)
+      .on('click', () => openDetail(idx));
+
+    m.bindTooltip(
+      `Point ${idx+1} — (${pt.lat.toFixed(3)}, ${pt.lon.toFixed(3)})<br/>Weight: ${(pt.weight*100).toFixed(2)}%`,
+      { direction: 'top', className: 'leaflet-tooltip-dark' }
+    );
+    markers.push(m);
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   SERVER STATUS
+═══════════════════════════════════════════════════════════════ */
+async function checkServer() {
+  const dot   = document.getElementById('server-dot');
+  const label = document.getElementById('server-label');
+  try {
+    const r = await fetch(`${API}/ping`, { signal: AbortSignal.timeout(2000) });
+    if (r.ok) {
+      dot.className   = 'online';
+      label.textContent = 'Server online :5050';
+      return true;
+    }
+  } catch {}
+  dot.className   = 'offline';
+  label.textContent = 'Server offline';
+  return false;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RUN ANALYSIS
+═══════════════════════════════════════════════════════════════ */
+async function runAnalysis() {
+  const online = await checkServer();
+  if (!online) {
+    toast('❌ Server offline. Start server.py first.', 'err');
+    return;
+  }
+
+  const cfg = {
+    folder    : document.getElementById('cfg-folder').value.trim(),
+    year_start: parseInt(document.getElementById('year-start').value),
+    year_end  : parseInt(document.getElementById('year-end').value),
+    hs_max    : parseFloat(document.getElementById('cfg-hs-max').value),
+    hs_step   : parseFloat(document.getElementById('cfg-hs-step').value),
+    tp_max    : parseFloat(document.getElementById('cfg-tp-max').value),
+    tp_step   : parseFloat(document.getElementById('cfg-tp-step').value),
+  };
+  const trackVal = document.getElementById('cfg-track').value.trim();
+  if (trackVal) cfg.track = trackVal;
+  cfg.output = cfg.folder.replace(/\\data$/, '\\results').replace(/\/data$/, '/results');
+
+  const btn = document.getElementById('run-btn');
+  btn.disabled  = true;
+  btn.classList.add('btn-running');
+  btn.innerHTML = '<span class="spinner"></span> Running…';
+
+  clearLog();
+  setRunProgress(2, 'Sending configuration to server');
+  logLine('Sending configuration to server...', 'info');
+
+  try {
+    const r = await fetch(`${API}/run`, {
+      method : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body   : JSON.stringify(cfg),
+    });
+    const j = await r.json();
+    if (r.status === 409) {
+      setRunProgress(0, 'Analysis already running');
+      logLine('Already running...', 'warn');
+    } else if (!r.ok) {
+      setRunProgress(0, `Error: ${j.error}`);
+      logLine(`Error: ${j.error}`, 'err');
+      resetRunBtn();
+      return;
+    }
+  } catch (e) {
+    setRunProgress(0, `${e}`);
+    logLine(`${e}`, 'err');
+    resetRunBtn();
+    return;
+  }
+
+  // Poll for status
+  pollTimer = setInterval(pollStatus, 1000);
+}
+
+let lastLogLen = 0;
+async function pollStatus() {
+  try {
+    const r = await fetch(`${API}/status`);
+    const s = await r.json();
+    setRunProgress(s.progress || 0, s.message || 'Working');
+
+    // Append new log lines
+    if (s.log.length > lastLogLen) {
+      s.log.slice(lastLogLen).forEach(l => {
+        const cls = l.startsWith('✓') ? 'ok' : l.startsWith('✗') ? 'err' : '';
+        logLine(l, cls);
+      });
+      lastLogLen = s.log.length;
+    }
+
+    if (s.done) {
+      clearInterval(pollTimer);
+      pollTimer  = null;
+      lastLogLen = 0;
+      resetRunBtn();
+
+      if (s.success) {
+        setRunProgress(100, 'Analysis complete');
+        toast('✅ Analysis complete!');
+        enableDownloads();
+        await loadResults();
+        fetchTrack();
+      } else {
+        setRunProgress(s.progress || 0, 'Analysis failed');
+        toast('❌ Analysis failed — check log.', 'err');
+      }
+    }
+  } catch {}
+}
+
+function resetRunBtn() {
+  const btn = document.getElementById('run-btn');
+  btn.disabled  = false;
+  btn.classList.remove('btn-running');
+  btn.innerHTML = '▶ &nbsp;Run Analysis';
+}
+
+function setRunProgress(percent, message) {
+  const pct = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+  document.getElementById('progress-bar').style.width = `${pct}%`;
+  document.getElementById('progress-percent').textContent = `${pct}%`;
+  document.getElementById('progress-message').textContent = message || 'Working';
+}
+
+function toggleRunDetails() {
+  const logBox = document.getElementById('log-box');
+  const toggle = document.getElementById('progress-details');
+  const collapsed = logBox.classList.toggle('collapsed');
+  toggle.textContent = collapsed ? 'Show details' : 'Hide details';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LOAD RESULTS
+═══════════════════════════════════════════════════════════════ */
+async function loadResults() {
+  const online = await checkServer();
+  if (!online) { toast('❌ Server offline.', 'err'); return; }
+
+  document.getElementById('load-btn').textContent = '↻ Loading…';
+  try {
+    const r = await fetch(`${API}/results`);
+    if (!r.ok) {
+      const j = await r.json();
+      toast(`❌ ${j.error}`, 'err');
+      return;
+    }
+    results = await r.json();
+    renderResults(results);
+    drawGridPoints(results.per_point);
+    enableDownloads();
+    toast('✅ Results loaded!');
+  } catch (e) {
+    toast(`❌ ${e}`, 'err');
+  }
+  document.getElementById('load-btn').textContent = '↓ Load Existing Results';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   RENDER RESULTS
+═══════════════════════════════════════════════════════════════ */
+function renderResults(data) {
+  document.getElementById('empty-state').style.display    = 'none';
+  document.getElementById('results-content').style.display = '';
+
+  // Stats
+  const nPts = data.per_point.length;
+  const totPct = data.captured_pct ?? data.D_weighted_pct.reduce((s, row) => s + row.reduce((a, b) => a + b, 0), 0);
+  const outsidePct = data.outside_pct ?? Math.max(0, 100 - totPct);
+  const maxPct = Math.max(...data.D_weighted_pct.map(r => Math.max(...r)));
+
+  document.getElementById('stats-row').innerHTML = `
+    <div class="stat-card">
+      <div class="label">Grid Points</div>
+      <div class="value">${nPts}</div>
+      <div class="sub">along route</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Route Length</div>
+      <div class="value">${data.total_km.toFixed(0)}</div>
+      <div class="sub">km total</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Coverage</div>
+      <div class="value">${totPct.toFixed(1)}%</div>
+      <div class="sub">inside selected bins</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Outside Range</div>
+      <div class="value">${outsidePct.toFixed(1)}%</div>
+      <div class="sub">excluded from table</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">Peak Cell</div>
+      <div class="value">${maxPct.toFixed(2)}%</div>
+      <div class="sub">max probability</div>
+    </div>
+  `;
+
+  renderHeatmap(data);
+}
+
+function renderHeatmap(data) {
+  const D   = data.D_weighted_pct;
+  const hs  = data.hs_centers;
+  const tp  = data.tp_centers;
+
+  // Display the exact bin range selected for this run.
+  const hsMask = hs.map(() => true);
+  const tpMask = tp.map(() => true);
+
+  const hsDisp = hs.filter((_, i) => hsMask[i]);
+  const tpDisp = tp.filter((_, i) => tpMask[i]);
+  const data2d = D.filter((_, i) => hsMask[i]).map(row => row.filter((_, j) => tpMask[j]));
+
+  const rowTotals = data2d.map(r => r.reduce((a, b) => a + b, 0));
+  const colTotals = tpDisp.map((_, j) => data2d.reduce((s, r) => s + r[j], 0));
+  const grand     = rowTotals.reduce((a, b) => a + b, 0);
+
+  const maxVal = Math.max(...data2d.flat());
+
+  let html = '<thead><tr><th>Hs \\ Tp</th>';
+  tpDisp.forEach(t => { html += `<th>${t.toFixed(1)}</th>`; });
+  html += '<th class="total-col">Total</th></tr></thead><tbody>';
+
+  data2d.forEach((row, ri) => {
+    html += `<tr><td>${hsDisp[ri].toFixed(1)} m</td>`;
+    row.forEach(v => {
+      const bg = v > 0 ? heatColor(v, maxVal) : '';
+      const fc = v > maxVal * 0.6 ? '#111' : '#e0e8ff';
+      html += `<td style="background:${bg};color:${fc}">${v > 0 ? v.toFixed(2)+'%' : ''}</td>`;
+    });
+    html += `<td class="total-col">${rowTotals[ri].toFixed(2)}%</td></tr>`;
+  });
+
+  html += '<tr class="total-row"><td>Total</td>';
+  colTotals.forEach(v => { html += `<td>${v.toFixed(2)}%</td>`; });
+  html += `<td>${grand.toFixed(2)}%</td></tr></tbody>`;
+
+  document.getElementById('heatmap-table').innerHTML = html;
+}
+
+function heatColor(val, max) {
+  if (max === 0) return 'transparent';
+  const t = val / max;
+  // Deep blue → teal → yellow → red
+  const stops = [
+    [0,   [15, 25, 60]],
+    [0.2, [30, 90, 180]],
+    [0.4, [50, 180, 160]],
+    [0.6, [220, 200, 50]],
+    [0.8, [240, 120, 30]],
+    [1.0, [220, 40, 40]],
+  ];
+  for (let i = 1; i < stops.length; i++) {
+    if (t <= stops[i][0]) {
+      const f  = (t - stops[i-1][0]) / (stops[i][0] - stops[i-1][0]);
+      const c0 = stops[i-1][1], c1 = stops[i][1];
+      const r  = Math.round(c0[0] + f * (c1[0] - c0[0]));
+      const g  = Math.round(c0[1] + f * (c1[1] - c0[1]));
+      const b  = Math.round(c0[2] + f * (c1[2] - c0[2]));
+      return `rgb(${r},${g},${b})`;
+    }
+  }
+  return 'rgb(220,40,40)';
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   POINT DETAIL MODAL
+═══════════════════════════════════════════════════════════════ */
+function openDetail(idx) {
+  if (!results) return;
+  const pt  = results.per_point[idx];
+  const D   = pt.matrix;
+  const hs  = results.hs_centers;
+  const tp  = results.tp_centers;
+  const maxV = Math.max(...D.flat());
+
+  document.getElementById('detail-title').textContent =
+    `Point ${idx+1} — (${pt.lat.toFixed(4)}°, ${pt.lon.toFixed(4)}°) · Weight: ${(pt.weight*100).toFixed(3)}%`;
+
+  let html = '<div style="overflow-x:auto"><table style="border-collapse:collapse;font-size:11px;font-family:\'JetBrains Mono\',monospace">';
+  html += '<thead><tr><th style="padding:5px 8px;background:var(--bg3);border:1px solid var(--border)">Hs \\ Tp</th>';
+  tp.forEach(t => { html += `<th style="padding:5px 8px;background:var(--bg3);border:1px solid var(--border)">${t.toFixed(1)}</th>`; });
+  html += '</tr></thead><tbody>';
+  D.forEach((row, ri) => {
+    html += `<tr><td style="padding:5px 8px;background:var(--bg3);font-weight:600;border:1px solid var(--border)">${hs[ri].toFixed(1)}m</td>`;
+    row.forEach(v => {
+      const bg = v > 0 ? heatColor(v, maxV) : 'var(--bg2)';
+      const fc = v > maxV * 0.6 ? '#111' : '#e0e8ff';
+      html += `<td style="padding:5px 8px;background:${bg};color:${fc};text-align:center;border:1px solid var(--border)">${v > 0 ? v.toFixed(2)+'%' : ''}</td>`;
+    });
+    html += '</tr>';
+  });
+  html += '</tbody></table></div>';
+
+  document.getElementById('detail-content').innerHTML = html;
+  document.getElementById('point-detail').classList.add('open');
+}
+
+function closeDetail() {
+  document.getElementById('point-detail').classList.remove('open');
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   DOWNLOADS
+═══════════════════════════════════════════════════════════════ */
+function dl(type) {
+  window.open(`${API}/download/${type}`, '_blank');
+}
+
+function enableDownloads() {
+  ['dl-png', 'dl-svg'].forEach(id => {
+    document.getElementById(id).disabled = false;
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   LOG BOX
+═══════════════════════════════════════════════════════════════ */
+function logLine(text, cls = '') {
+  const box = document.getElementById('log-box');
+  const el  = document.createElement('div');
+  if (cls) el.className = cls;
+  el.textContent = text;
+  box.appendChild(el);
+  box.scrollTop = box.scrollHeight;
+}
+
+function clearLog() {
+  document.getElementById('log-box').innerHTML = '';
+  document.getElementById('log-box').classList.add('collapsed');
+  document.getElementById('progress-details').textContent = 'Show details';
+  lastLogLen = 0;
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   TOAST
+═══════════════════════════════════════════════════════════════ */
+let toastTimer;
+function toast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.style.borderColor = type === 'err' ? 'var(--danger)'
+                        : type === 'warn' ? 'var(--warn)'
+                        : 'var(--success)';
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   YEAR RANGE SYNC
+═══════════════════════════════════════════════════════════════ */
+function syncYearLabel() {
+  const s = document.getElementById('year-start').value;
+  const e = document.getElementById('year-end').value;
+  document.getElementById('year-label').textContent = `${s} – ${e}`;
+}
+document.getElementById('year-start').addEventListener('input', syncYearLabel);
+document.getElementById('year-end').addEventListener('input', syncYearLabel);
+
+/* ═══════════════════════════════════════════════════════════════
+   KEYBOARD SHORTCUTS
+═══════════════════════════════════════════════════════════════ */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeDetail();
+});
+
+/* ═══════════════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+  initMap();
+  checkServer();
+  // Auto-check server every 10s
+  setInterval(checkServer, 10000);
+});
+</script>
+</body>
+</html>

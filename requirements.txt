@@ -1,0 +1,12 @@
+flask
+flask-cors
+werkzeug
+xarray
+netCDF4
+dask
+numpy
+matplotlib
+scipy
+searoute
+boto3
+gunicorn
